@@ -1,0 +1,47 @@
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app import models, schemas, services
+from app.database import get_db
+
+router = APIRouter(prefix="/products", tags=["products"])
+
+
+@router.get("", response_model=list[schemas.ProductRead])
+def list_products(db: Session = Depends(get_db)) -> list[models.Product]:
+    return list(db.scalars(select(models.Product).order_by(models.Product.name)))
+
+
+@router.post("", response_model=schemas.ProductRead, status_code=status.HTTP_201_CREATED)
+def create_product(payload: schemas.ProductCreate, db: Session = Depends(get_db)) -> models.Product:
+    return services.create_product(db, payload)
+
+
+@router.get("/{product_id}", response_model=schemas.ProductRead)
+def get_product(product_id: int, db: Session = Depends(get_db)) -> models.Product:
+    product = db.get(models.Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found.")
+    return product
+
+
+@router.patch("/{product_id}", response_model=schemas.ProductRead)
+def update_product(
+    product_id: int, payload: schemas.ProductUpdate, db: Session = Depends(get_db)
+) -> models.Product:
+    product = db.get(models.Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found.")
+    return services.update_product(db, product, payload)
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(product_id: int, db: Session = Depends(get_db)) -> Response:
+    product = db.get(models.Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found.")
+    db.delete(product)
+    services.commit_or_409(db, "Product cannot be deleted because it is used in orders.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
